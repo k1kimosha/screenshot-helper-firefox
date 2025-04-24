@@ -1,0 +1,13 @@
+{
+    "name": "screenshot-helper",
+    "version": "0.0.1",
+    "license": "MIT",
+    "scripts": {
+        "build": "tsc && npm run copy-assets",
+        "copy-assets": "mkdir -p dist/icons && cp -r icons/* dist/icons/"
+    },
+    "devDependencies": {
+        "@types/chrome": "^0.0.316",
+        "typescript": "^5.3.3"
+    }
+}
