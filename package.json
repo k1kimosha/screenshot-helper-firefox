@@ -1,13 +1,17 @@
 {
     "name": "screenshot-helper",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "license": "MIT",
     "scripts": {
-        "build": "tsc && npm run copy-assets",
-        "copy-assets": "mkdir -p dist/icons && cp -r icons/* dist/icons/"
+        "clean": "rimraf dist",
+        "build:ts": "tsc",
+        "copy:assets": "cpx \"src/**/*.{html,css,json,png,svg,jpg}\" dist",
+        "build": "npm run clean && npm run build:ts && npm run copy:assets"
     },
     "devDependencies": {
         "@types/chrome": "^0.0.316",
-        "typescript": "^5.3.3"
+        "cpx": "^1.5.0",
+        "rimraf": "^6.0.1",
+        "typescript": "^5.8.3"
     }
 }
