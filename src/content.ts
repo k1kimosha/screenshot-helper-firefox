@@ -1,6 +1,8 @@
 const MESSAGE_TYPES = {
   START_SELECTION: "screenshot-start-selection",
   DONE_SELECTION: "screenshot-selection-done",
+  MOUSE_DOWN_EVENT: "screenshot-mouse-down-event",
+  MOUSE_UP_EVENT: "screenshot-mouse-up-event",
   CAPTURE_REQUEST: "screenshot-capture-request",
   CAPTURE_RESULT: "screenshot-capture-result",
   CAPTURE_TOO_SMALL: "screenshot-capture-too-small",
@@ -17,16 +19,20 @@ const LOG_MESSAGE_TEMPLATE = "[ScreenshotHelper] %s received";
 
 let overlay: HTMLDivElement | null = null;
 let selectionBox: HTMLDivElement | null = null;
-let selectionBoxRef: HTMLDivElement | null = null;
 let captureTabQuality = DEFAULT_QUALITY;
 let canvasQuality = DEFAULT_CANVAS_QUALITY;
 let saveImg = false;
 
+let startX = 0;
+let startY = 0;
+let isSelecting = false;
+
 window.addEventListener("message", (event) => {
   const { type, message } = event.data;
 
+  console.log(LOG_MESSAGE_TEMPLATE, type);
+
   if (type === MESSAGE_TYPES.START_SELECTION) {
-    console.log(LOG_MESSAGE_TEMPLATE, MESSAGE_TYPES.START_SELECTION);
     clear();
     initOverlay();
     captureTabQuality = message?.captureTabQuality || DEFAULT_QUALITY;
@@ -34,7 +40,6 @@ window.addEventListener("message", (event) => {
   }
 
   if (type === MESSAGE_TYPES.RESET) {
-    console.log(LOG_MESSAGE_TEMPLATE, type);
     clear();
   }
 
@@ -45,8 +50,7 @@ window.addEventListener("message", (event) => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MESSAGE_TYPES.START_SELECTION) {
-    console.log("[Content] Получен запрос на выделение", document);
-    // Ваш код активации выделения
+    console.log(LOG_MESSAGE_TEMPLATE, msg.type);
     clear();
     initOverlay();
     saveImg = true;
@@ -61,20 +65,24 @@ function base64ToBlob(base64: string, type: string) {
   for (let i = 0; i < binary.length; i++) {
     array.push(binary.charCodeAt(i));
   }
-  return new Blob([new Uint8Array(array)], {type: type});
+  return new Blob([new Uint8Array(array)], { type: type });
 }
 
 function clear() {
   saveImg = false;
   captureTabQuality = DEFAULT_QUALITY;
   canvasQuality = DEFAULT_CANVAS_QUALITY;
-  selectionBoxRef?.remove();
+
   overlay?.remove();
   selectionBox?.remove();
-  selectionBoxRef = overlay = selectionBox = null;
+  overlay = selectionBox = null;
   document
     .querySelectorAll('[id="screenshot-helper-select-rect"]')
     .forEach((el) => el.remove());
+
+  document.removeEventListener("mousedown", onMouseDown);
+  document.removeEventListener("mousemove", onMouseMove);
+  document.removeEventListener("mouseup", onMouseUp);
 }
 
 function initOverlay() {
@@ -88,23 +96,24 @@ function initOverlay() {
     left: "0",
     width: "100vw",
     height: "100vh",
-    zIndex: saveImg ? "9999" : "1",
+    zIndex: saveImg ? "9999" : "20",
     cursor: "crosshair",
     backgroundColor: "rgba(0, 0, 0, 0)",
   });
   document.body.appendChild(overlay);
 
-  overlay.addEventListener("mousedown", onMouseDown);
-  overlay.addEventListener("mousemove", onMouseMove);
-  overlay.addEventListener("mouseup", onMouseUp);
+  document.addEventListener("mousedown", onMouseDown);
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
 }
 
-let startX = 0,
-  startY = 0,
-  isSelecting = false;
-
 function onMouseDown(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest('.exclude-screenshot-helper')) {
+    return;
+  }
   if (e.button !== 0) return;
+  window.postMessage({ type: MESSAGE_TYPES.MOUSE_DOWN_EVENT }, "*");
 
   isSelecting = true;
   startX = e.clientX;
@@ -147,19 +156,18 @@ function onMouseMove(e: MouseEvent) {
 
 function onMouseUp(e: MouseEvent) {
   try {
-    if (!isSelecting || !selectionBox || !overlay) return;
-    isSelecting = false;
+    if (e.button !== 0 || !isSelecting || !selectionBox || !overlay) return;
+    window.postMessage({ type: MESSAGE_TYPES.MOUSE_UP_EVENT }, "*");
 
     const rect = selectionBox.getBoundingClientRect();
     const isValidSize = rect.width >= MIN_SIZE && rect.height >= MIN_SIZE;
 
     if (!isValidSize) {
-      clear();
+      selectionBox && selectionBox?.remove();
       window.postMessage({ type: MESSAGE_TYPES.CAPTURE_TOO_SMALL }, "*");
       return;
     }
 
-    // selectionBoxRef = selectionBox;
     selectionBox.style.backgroundColor = "rgba(0,0,0,0)";
     selectionBox.style.border = "none";
 
@@ -179,6 +187,9 @@ function onMouseUp(e: MouseEvent) {
           saveImg,
         },
         (response) => {
+          if(saveImg) {
+            clear();
+          }
           if (chrome.runtime.lastError) {
             console.error(
               "[ScreenshotHelper] Failed to capture:",
@@ -221,9 +232,11 @@ function onMouseUp(e: MouseEvent) {
               "*"
             );
           }
+
+          isSelecting = false;
         }
       );
-    }, 100);
+    }, 1);
   } catch (error) {
     window.postMessage(
       {
